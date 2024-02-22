@@ -3,8 +3,11 @@ package study.querydsl;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.dsl.Wildcard;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.PersistenceUnit;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -309,6 +312,125 @@ public class QuerydslBasicTest {
                 .select(member, team)
                 .from(member)
                 .leftJoin(team).on(member.username.eq(team.name))
+                .fetch();
+        //then
+        for (Tuple tuple : fetch) {
+            System.out.println("tuple = " + tuple);
+        }
+    }
+
+    @PersistenceUnit
+    EntityManagerFactory emf;
+
+    @Test
+    public void fetchJoinNo() throws Exception {
+        //given
+        em.flush();
+        em.clear();
+
+        //when
+        Member findMember = queryFactory
+                .selectFrom(member)
+                .where(member.username.eq("member1"))
+                .fetchOne();
+
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
+
+        //then
+        assertThat(loaded).as("페치 조인 적용").isFalse();
+    }
+
+    @Test
+    public void fetchJoin() throws Exception {
+        //given
+        em.flush();
+        em.clear();
+
+        //when
+        Member findMember = queryFactory
+                .selectFrom(member)
+                .join(member.team, team).fetchJoin()
+                .where(member.username.eq("member1"))
+                .fetchOne();
+
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
+
+        //then
+        assertThat(loaded).as("페치 조인 적용").isTrue();
+    }
+
+    /*나이가 가장 많은 회원 조회*/
+    @Test
+    public void subQuery() throws Exception {
+        //given
+        QMember memberSub = new QMember("memberSub");
+        //when
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.eq(
+                        JPAExpressions
+                                .select(memberSub.age.max())
+                                .from(memberSub)
+                ))
+                .fetch();
+
+        //then
+        assertThat(result).extracting("age")
+                .containsExactly(40);
+    }
+
+    /*나이가 평균 이상인 회원*/
+    @Test
+    public void subQueryGoe() throws Exception {
+        //given
+        QMember memberSub = new QMember("memberSub");
+        //when
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.goe(
+                        JPAExpressions
+                                .select(memberSub.age.avg())
+                                .from(memberSub)
+                ))
+                .fetch();
+
+        //then
+        assertThat(result).extracting("age")
+                .containsExactly(30,40);
+    }
+
+    @Test
+    public void subQueryIn() throws Exception {
+        //given
+        QMember memberSub = new QMember("memberSub");
+        //when
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.in(
+                        JPAExpressions
+                                .select(memberSub.age)
+                                .from(memberSub)
+                                .where(memberSub.age.gt(10))
+                ))
+                .fetch();
+
+        //then
+        assertThat(result).extracting("age")
+                .containsExactly(20, 30,40);
+    }
+
+    @Test
+    public void selectSubQuery() throws Exception {
+        //given
+        QMember memberSub = new QMember("memberSub");
+        //when
+        List<Tuple> fetch = queryFactory
+                .select(member.username,
+                        JPAExpressions
+                                .select(memberSub.age.avg())
+                                .from(memberSub)
+                )
+                .from(member)
                 .fetch();
         //then
         for (Tuple tuple : fetch) {
